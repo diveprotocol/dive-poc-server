@@ -1,7 +1,7 @@
 services:
   dive-poc:
     build: .
-    image: dive-poc-server:latest
+    image: ghcr.io/diveprotocol/dive-poc-server:latest
     ports:
       - "8080:80"
     volumes:
