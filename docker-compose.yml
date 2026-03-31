@@ -1,0 +1,10 @@
+services:
+  dive-poc:
+    build: .
+    image: dive-poc-server:latest
+    ports:
+      - "8080:80"
+    volumes:
+      # Persistent data: resources + signatures.json
+      - ./container-data:/data
+    restart: unless-stopped
