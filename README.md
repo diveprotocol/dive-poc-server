@@ -1,8 +1,8 @@
 # DIVE PoC — PHP server
 
 Proof of concept for the **Domain-based Integrity Verification Enforcement**
-(DIVE) draft RFC. Serves files from a configurable directory with the
-`DIVE-Sig` HTTP response header attached.
+(DIVE) draft RFC. Serves files from a configurable directory with RFC 9421
+HTTP Message Signature headers attached.
 
 ---
 
@@ -19,7 +19,7 @@ Proof of concept for the **Domain-based Integrity Verification Enforcement**
 ├── src/                      ← PHP source (copied into the image)
 │   ├── index.php             ← router / entry point
 │   ├── config.php            ← path constants
-│   ├── SignatureStore.php    ← reads signatures.json, builds DIVE-Sig value
+│   ├── SignatureStore.php    ← reads signatures.json, builds RFC 9421 headers
 │   └── DownloadHandler.php   ← path-safe file serving
 └── tools/
     └── sign.php              ← CLI helper: key generation + signing (offline)
@@ -39,8 +39,10 @@ php tools/sign.php --keygen
 
 # 3. Sign the file
 php tools/sign.php --sign container-data/resources/myfile.zip \
-                   --key  <private-key-b64> \
-                   --algo sha256
+                   --key    <private-key-b64> \
+                   --algo   sha256 \
+                   --key-id keyABC \
+                   --fqdn   example.com
 #    → prints a signatures.json snippet; paste it in
 
 # 4. Edit container-data/signatures.json with the output above
@@ -57,7 +59,9 @@ docker compose up --build
 # 6. Download the file
 curl -I http://localhost/downloads/myfile.zip
 #    HTTP/1.1 200 OK
-#    DIVE-Sig: keyABC@example.com:sha256:<BASE64SIG>
+#    Content-Digest: sha-256=:<BASE64DIGEST>:
+#    Signature-Input: sig1=("content-digest");keyid="keyABC@example.com";alg="ed25519"
+#    Signature: sig1=:<BASE64SIG>:
 #    Content-Disposition: attachment; filename="myfile.zip"
 ```
 
@@ -72,7 +76,7 @@ curl -I http://localhost/downloads/myfile.zip
       {
         "key_id": "keyABC",
         "fqdn": "example.com",
-        "hash_algorithm": "sha256",
+        "content_digest": "sha-256=:<base64-sha256-of-file>:",
         "signature_b64": "<base64-encoded raw Ed25519 signature>"
       }
     ]
@@ -80,28 +84,32 @@ curl -I http://localhost/downloads/myfile.zip
 }
 ```
 
-| Field            | Required | Notes                                          |
-| ---------------- | -------- | ---------------------------------------------- |
-| `key_id`         | ✓        | `[A-Za-z0-9_]+` — matches the DNS label prefix |
-| `hash_algorithm` | ✓        | `sha256` \| `sha384` \| `sha512`               |
-| `signature_b64`  | ✓        | Base64 of the raw 64-byte Ed25519 signature    |
-| `fqdn`           | —        | When present emits `keyID@fqdn` in the header  |
+| Field            | Required | Notes                                                    |
+| ---------------- | -------- | -------------------------------------------------------- |
+| `key_id`         | ✓        | `[A-Za-z0-9_]+` — matches the DNS label prefix          |
+| `content_digest` | ✓        | RFC 9530 value: `sha-256=:BASE64:` / `sha-384=:BASE64:` |
+| `signature_b64`  | ✓        | Base64 of the raw 64-byte Ed25519 signature              |
+| `fqdn`           | —        | When present, keyid in Signature-Input becomes `key@fqdn`|
 
-Multiple entries in `"signatures"` produce multiple comma-separated tokens in
-`DIVE-Sig` (multi-key scenario, key rotation overlap, etc.).
+Multiple entries in `"signatures"` produce multiple labeled entries in
+`Signature-Input` / `Signature` (multi-key scenario, key rotation overlap, etc.).
 
 ---
 
-## Signature input (per DIVE spec §5 Step 5)
+## Signature input (RFC 9421 §2.5)
+
+The signature is computed over the RFC 9421 **signature base**, which for DIVE is:
 
 ```
-input = hash_algorithm_name || ":" || raw_hash_bytes
+"content-digest": <Content-Digest header value>
+"@signature-params": ("content-digest");keyid="<keyid>";alg="ed25519"
 ```
 
-Example for SHA-256:
+Example for SHA-256 with `keyABC@example.com`:
 
 ```
-"sha256:" + <32 raw bytes of SHA-256(file)>
+"content-digest": sha-256=:<base64-digest>:
+"@signature-params": ("content-digest");keyid="keyABC@example.com";alg="ed25519"
 ```
 
 The `tools/sign.php` helper does this automatically.
@@ -113,13 +121,13 @@ The `tools/sign.php` helper does this automatically.
 **Policy record** (`_dive.example.com TXT`):
 
 ```
-v="dive-draft-00", scopes=("download"), directives=("https-required"), cache=1800
+v="dive-draft-01", scopes=("download"), directives=("https-required"), cache=1800
 ```
 
 **Key record** (`keyABC._divekey.example.com TXT`):
 
 ```
-sig="ed25519", key=:<base64-public-key>:, allowed-hash=("sha256" "sha384"), cache=900
+sig="ed25519", key=:<base64-public-key>:, cache=900
 ```
 
 Both zones **must** be signed with DNSSEC.
@@ -133,5 +141,5 @@ Both zones **must** be signed with DNSSEC.
   a private key, and `tools/` is never copied into the Docker image.
 - **Path traversal is blocked** at two levels: character rejection (`/`, `\`,
   null bytes) and `realpath()` containment check.
-- Files with no entry in `signatures.json` are served **without** `DIVE-Sig`.
-  A DIVE-enforcing client in `download` scope will refuse them.
+- Files with no entry in `signatures.json` are served **without** DIVE signature
+  headers. A DIVE-enforcing client in `download` scope will refuse them.

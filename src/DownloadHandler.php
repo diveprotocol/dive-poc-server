@@ -3,7 +3,7 @@
 /**
  * DIVE PoC — DownloadHandler
  *
- * Validates the requested filename, attaches the DIVE-Sig header, and
+ * Validates the requested filename, attaches RFC 9421 signature headers, and
  * streams the file to the client.
  *
  * Security measures implemented
@@ -16,9 +16,9 @@
  *         OS-level path normalisation tricks.
  *  2. No shell execution — file content is read and streamed with plain PHP
  *     file I/O; no exec/system/passthru is used.
- *  3. Signature injection — DIVE-Sig is taken from the pre-computed
- *     signatures.json; the server never signs on-the-fly, keeping the
- *     private key off the serving host (in line with §Operational Security).
+ *  3. Signature injection — Content-Digest/Signature-Input/Signature headers
+ *     are taken from pre-computed signatures.json; the server never signs
+ *     on-the-fly, keeping the private key off the serving host.
  */
 
 declare(strict_types=1);
@@ -125,14 +125,14 @@ class DownloadHandler
             return;
         }
 
-        // ── 5. Look up the DIVE-Sig header value ──────────────────────────────
+        // ── 5. Look up the RFC 9421 signature headers ─────────────────────────
 
         // Use the basename of the resolved path as the store key so that any
         // remaining symlink indirection (inside the directory) is stripped.
         $storeKey = basename($resolvedPath);
 
         try {
-            $diveSigValue = $this->store->buildDiveSigHeader($storeKey);
+            $signatureHeaders = $this->store->buildSignatureHeaders($storeKey);
         } catch (\RuntimeException $e) {
             error_log('DIVE PoC: SignatureStore error: ' . $e->getMessage());
             $this->sendError(500, 'Internal Server Error', 'Signature data error.');
@@ -158,14 +158,16 @@ class DownloadHandler
         header('X-Content-Type-Options: nosniff');
         header('Cache-Control: no-store');
 
-        // DIVE-Sig — only added when signature data is available
-        if ($diveSigValue !== null) {
-            header('DIVE-Sig: ' . $diveSigValue);
+        // RFC 9421/9530 signature headers — only added when signature data is available
+        if ($signatureHeaders !== null) {
+            header('Content-Digest: '  . $signatureHeaders['content-digest']);
+            header('Signature-Input: ' . $signatureHeaders['signature-input']);
+            header('Signature: '       . $signatureHeaders['signature']);
         } else {
             // Log the omission; a DIVE-compliant client will refuse this resource
             // once it determines it falls within an enforced scope.
             error_log(sprintf(
-                'DIVE PoC: no signature data found for "%s"; DIVE-Sig header omitted.',
+                'DIVE PoC: no signature data found for "%s"; DIVE signature headers omitted.',
                 $filename
             ));
         }

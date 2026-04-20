@@ -4,7 +4,7 @@
  * DIVE PoC — Entry point / router
  *
  * Routes:
- *   GET  /downloads/{filename}   Serve a resource with DIVE-Sig header
+ *   GET  /downloads/{filename}   Serve a resource with RFC 9421 signature headers
  *   POST /report                 Handle DIVE verification failure reports
  *   GET  /                       Health-check / info page
  */

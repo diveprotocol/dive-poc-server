@@ -4,8 +4,8 @@
             {
                 "key_id": "keyABC",
                 "fqdn": "example.com",
-                "hash_algorithm": "sha256",
-                "signature_b64": "OYttSIBOcEC7kKMUSwkvZu7T3/L2GJrdKPdir0CXwjzzK7Yl/Q/x3ukuYy+q4A6ghR/fgyP05Jb4kl+YOrzOAw=="
+                "content_digest": "sha-256=:caKko+Ts/dQ30YNsPHNF6PhyvgTtpCpSlz6I6ieyIoI=:",
+                "signature_b64": "REGENERATE_WITH_tools_sign.php"
             }
         ]
     }

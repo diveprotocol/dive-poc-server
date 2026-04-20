@@ -121,8 +121,8 @@ class ReportHandler
 
         // Validate validation structure
         $requiredValidationFields = [
-            'hash-algorithm',
-            'hash-computed',
+            'content-digest',
+            'signature-input',
             'signature-valid',
             'failure-reason',
             'final-decision'
